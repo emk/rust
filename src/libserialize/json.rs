@@ -367,8 +367,8 @@ fn escape_str(writer: &mut io::Writer, v: &str) -> Result<(), io::IoError> {
 
 fn escape_char(writer: &mut io::Writer, v: char) -> Result<(), io::IoError> {
     let mut buf = [0, .. 4];
-    v.encode_utf8(&mut buf);
-    escape_bytes(writer, &mut buf)
+    let sz = v.encode_utf8(&mut buf).unwrap();
+    escape_bytes(writer, buf[mut ..sz])
 }
 
 fn spaces(wr: &mut io::Writer, mut n: uint) -> Result<(), io::IoError> {
@@ -2413,7 +2413,7 @@ mod tests {
     use super::StackElement::*;
     use super::InternalStackElement::*;
     use super::{PrettyEncoder, Json, from_str, DecodeResult, DecoderError, JsonEvent, Parser,
-                StackElement, Stack, Encoder, Decoder};
+                StackElement, Stack, Encoder, Decoder, encode};
     use std::{i64, u64, f32, f64, io};
     use std::collections::TreeMap;
     use std::num::Float;
@@ -2534,6 +2534,12 @@ mod tests {
 
         assert_eq!(String("homura".into_string()).to_string(), "\"homura\"");
         assert_eq!(String("madoka".into_string()).to_pretty_str(), "\"madoka\"");
+    }
+
+    #[test]
+    fn test_write_char() {
+        // We don't have a corresponding Json type, so test this with 'encode'.
+        assert_eq!(encode(&'c'), "\"c\"");
     }
 
     #[test]
