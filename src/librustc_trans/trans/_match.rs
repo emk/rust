@@ -198,6 +198,7 @@ use middle::expr_use_visitor as euv;
 use middle::infer;
 use middle::lang_items::StrEqFnLangItem;
 use middle::mem_categorization as mc;
+use middle::mem_categorization::Categorization;
 use middle::pat_util::*;
 use trans::adt;
 use trans::base::*;
@@ -221,6 +222,7 @@ use util::nodemap::FnvHashMap;
 use util::ppaux;
 
 use std;
+use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::fmt;
 use std::rc::Rc;
@@ -302,7 +304,7 @@ impl<'a, 'tcx> Opt<'a, 'tcx> {
                 RangeResult(Result::new(bcx, l1), Result::new(bcx, l2))
             }
             Variant(disr_val, ref repr, _, _) => {
-                adt::trans_case(bcx, &**repr, disr_val)
+                SingleResult(Result::new(bcx, adt::trans_case(bcx, &**repr, disr_val)))
             }
             SliceLengthEqual(length, _) => {
                 SingleResult(Result::new(bcx, C_uint(ccx, length)))
@@ -494,7 +496,7 @@ fn expand_nested_bindings<'a, 'p, 'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 }
 
 fn enter_match<'a, 'b, 'p, 'blk, 'tcx, F>(bcx: Block<'blk, 'tcx>,
-                                          dm: &DefMap,
+                                          dm: &RefCell<DefMap>,
                                           m: &[Match<'a, 'p, 'blk, 'tcx>],
                                           col: usize,
                                           val: MatchInput,
@@ -515,7 +517,7 @@ fn enter_match<'a, 'b, 'p, 'blk, 'tcx, F>(bcx: Block<'blk, 'tcx>,
             let mut bound_ptrs = br.bound_ptrs.clone();
             match this.node {
                 hir::PatIdent(_, ref path, None) => {
-                    if pat_is_binding(dm, &*this) {
+                    if pat_is_binding(&dm.borrow(), &*this) {
                         bound_ptrs.push((path.node.name, val.val));
                     }
                 }
@@ -540,7 +542,7 @@ fn enter_match<'a, 'b, 'p, 'blk, 'tcx, F>(bcx: Block<'blk, 'tcx>,
 }
 
 fn enter_default<'a, 'p, 'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
-                                     dm: &DefMap,
+                                     dm: &RefCell<DefMap>,
                                      m: &[Match<'a, 'p, 'blk, 'tcx>],
                                      col: usize,
                                      val: MatchInput)
@@ -554,7 +556,7 @@ fn enter_default<'a, 'p, 'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 
     // Collect all of the matches that can match against anything.
     enter_match(bcx, dm, m, col, val, |pats| {
-        if pat_is_binding_or_wild(dm, &*pats[col]) {
+        if pat_is_binding_or_wild(&dm.borrow(), &*pats[col]) {
             let mut r = pats[..col].to_vec();
             r.push_all(&pats[col + 1..]);
             Some(r)
@@ -595,7 +597,7 @@ fn enter_default<'a, 'p, 'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 fn enter_opt<'a, 'p, 'blk, 'tcx>(
              bcx: Block<'blk, 'tcx>,
              _: ast::NodeId,
-             dm: &DefMap,
+             dm: &RefCell<DefMap>,
              m: &[Match<'a, 'p, 'blk, 'tcx>],
              opt: &Opt,
              col: usize,
@@ -841,11 +843,11 @@ impl FailureHandler {
     }
 }
 
-fn pick_column_to_specialize(def_map: &DefMap, m: &[Match]) -> Option<usize> {
-    fn pat_score(def_map: &DefMap, pat: &hir::Pat) -> usize {
+fn pick_column_to_specialize(def_map: &RefCell<DefMap>, m: &[Match]) -> Option<usize> {
+    fn pat_score(def_map: &RefCell<DefMap>, pat: &hir::Pat) -> usize {
         match pat.node {
             hir::PatIdent(_, _, Some(ref inner)) => pat_score(def_map, &**inner),
-            _ if pat_is_refutable(def_map, pat) => 1,
+            _ if pat_is_refutable(&def_map.borrow(), pat) => 1,
             _ => 0
         }
     }
@@ -866,7 +868,7 @@ fn pick_column_to_specialize(def_map: &DefMap, m: &[Match]) -> Option<usize> {
 
     let column_contains_any_nonwild_patterns = |&col: &usize| -> bool {
         m.iter().any(|row| match row.pats[col].node {
-            hir::PatWild(_) => false,
+            hir::PatWild => false,
             _ => true
         })
     };
@@ -1496,12 +1498,12 @@ impl<'tcx> euv::Delegate<'tcx> for ReassignmentChecker {
 
     fn mutate(&mut self, _: ast::NodeId, _: Span, cmt: mc::cmt, _: euv::MutateMode) {
         match cmt.cat {
-            mc::cat_upvar(mc::Upvar { id: ty::UpvarId { var_id: vid, .. }, .. }) |
-            mc::cat_local(vid) => self.reassigned |= self.node == vid,
-            mc::cat_interior(ref base_cmt, mc::InteriorField(field)) => {
+            Categorization::Upvar(mc::Upvar { id: ty::UpvarId { var_id: vid, .. }, .. }) |
+            Categorization::Local(vid) => self.reassigned |= self.node == vid,
+            Categorization::Interior(ref base_cmt, mc::InteriorField(field)) => {
                 match base_cmt.cat {
-                    mc::cat_upvar(mc::Upvar { id: ty::UpvarId { var_id: vid, .. }, .. }) |
-                    mc::cat_local(vid) => {
+                    Categorization::Upvar(mc::Upvar { id: ty::UpvarId { var_id: vid, .. }, .. }) |
+                    Categorization::Local(vid) => {
                         self.reassigned |= self.node == vid &&
                             (self.field.is_none() || Some(field) == self.field)
                     },
@@ -1629,7 +1631,7 @@ fn trans_match_inner<'blk, 'tcx>(scope_cx: Block<'blk, 'tcx>,
     // to the default arm.
     let has_default = arms.last().map_or(false, |arm| {
         arm.pats.len() == 1
-        && arm.pats.last().unwrap().node == hir::PatWild(hir::PatWildSingle)
+        && arm.pats.last().unwrap().node == hir::PatWild
     });
 
     compile_submatch(bcx, &matches[..], &[discr_datum.match_input()], &chk, has_default);
@@ -1799,7 +1801,7 @@ pub fn bind_irrefutable_pat<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let ccx = bcx.ccx();
     match pat.node {
         hir::PatIdent(pat_binding_mode, ref path1, ref inner) => {
-            if pat_is_binding(&tcx.def_map, &*pat) {
+            if pat_is_binding(&tcx.def_map.borrow(), &*pat) {
                 // Allocate the stack slot where the value of this
                 // binding will live and place it into the appropriate
                 // map.
@@ -1948,7 +1950,7 @@ pub fn bind_irrefutable_pat<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                         cleanup_scope)
                 });
         }
-        hir::PatQPath(..) | hir::PatWild(_) | hir::PatLit(_) |
+        hir::PatQPath(..) | hir::PatWild | hir::PatLit(_) |
         hir::PatRange(_, _) => ()
     }
     return bcx;

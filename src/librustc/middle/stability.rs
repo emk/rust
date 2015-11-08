@@ -217,7 +217,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for Annotator<'a, 'tcx> {
 
     fn visit_impl_item(&mut self, ii: &hir::ImplItem) {
         self.annotate(ii.id, true, &ii.attrs, ii.span,
-                      |v| visit::walk_impl_item(v, ii), true);
+                      |v| visit::walk_impl_item(v, ii), false);
     }
 
     fn visit_variant(&mut self, var: &Variant, g: &'v Generics, item_id: NodeId) {
@@ -227,7 +227,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for Annotator<'a, 'tcx> {
 
     fn visit_struct_field(&mut self, s: &StructField) {
         self.annotate(s.node.id, true, &s.node.attrs, s.span,
-                      |v| visit::walk_struct_field(v, s), true);
+                      |v| visit::walk_struct_field(v, s), !s.node.kind.is_unnamed());
     }
 
     fn visit_foreign_item(&mut self, i: &hir::ForeignItem) {
@@ -541,13 +541,9 @@ pub fn check_pat(tcx: &ty::ctxt, pat: &hir::Pat,
     };
     match pat.node {
         // Foo(a, b, c)
+        // A Variant(..) pattern `hir::PatEnum(_, None)` doesn't have to be recursed into.
         hir::PatEnum(_, Some(ref pat_fields)) => {
             for (field, struct_field) in pat_fields.iter().zip(&v.fields) {
-                // a .. pattern is fine, but anything positional is
-                // not.
-                if let hir::PatWild(hir::PatWildMulti) = field.node {
-                    continue
-                }
                 maybe_do_stability_check(tcx, struct_field.did, field.span, cb)
             }
         }

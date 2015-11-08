@@ -105,6 +105,7 @@ pub fn run_core(search_paths: SearchPaths, cfgs: Vec<String>, externs: Externs,
         search_paths: search_paths,
         crate_types: vec!(config::CrateTypeRlib),
         lint_opts: vec!((warning_lint, lint::Allow)),
+        lint_cap: Some(lint::Allow),
         externs: externs,
         target_triple: triple.unwrap_or(config::host_triple().to_string()),
         cfg: config::parse_cfgspecs(cfgs),
@@ -145,7 +146,7 @@ pub fn run_core(search_paths: SearchPaths, cfgs: Vec<String>, externs: Externs,
                                         &arenas,
                                         &name,
                                         resolve::MakeGlobMap::No,
-                                        |tcx, analysis| {
+                                        |tcx, _, analysis| {
         let ty::CrateAnalysis { exported_items, public_items, .. } = analysis;
 
         // Convert from a NodeId set to a DefId set since we don't always have easy access

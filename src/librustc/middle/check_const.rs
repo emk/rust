@@ -32,6 +32,7 @@ use middle::def_id::DefId;
 use middle::expr_use_visitor as euv;
 use middle::infer;
 use middle::mem_categorization as mc;
+use middle::mem_categorization::Categorization;
 use middle::traits;
 use middle::ty::{self, Ty};
 use util::nodemap::NodeMap;
@@ -176,7 +177,7 @@ impl<'a, 'tcx> CheckCrateVisitor<'a, 'tcx> {
         if mode == Mode::ConstFn {
             for arg in &fd.inputs {
                 match arg.pat.node {
-                    hir::PatWild(_) => {}
+                    hir::PatWild => {}
                     hir::PatIdent(hir::BindByValue(hir::MutImmutable), _, None) => {}
                     _ => {
                         span_err!(self.tcx.sess, arg.pat.span, E0022,
@@ -224,7 +225,7 @@ impl<'a, 'tcx> CheckCrateVisitor<'a, 'tcx> {
             {
                 self.tcx.sess.span_err(
                     expr.span,
-                    &format!("const fns are an unstable feature"));
+                    "const fns are an unstable feature");
                 fileline_help!(
                     self.tcx.sess,
                     expr.span,
@@ -855,7 +856,7 @@ impl<'a, 'tcx> euv::Delegate<'tcx> for CheckCrateVisitor<'a, 'tcx> {
         let mut cur = &cmt;
         loop {
             match cur.cat {
-                mc::cat_static_item => {
+                Categorization::StaticItem => {
                     if self.mode != Mode::Var {
                         // statics cannot be consumed by value at any time, that would imply
                         // that they're an initializer (what a const is for) or kept in sync
@@ -866,13 +867,13 @@ impl<'a, 'tcx> euv::Delegate<'tcx> for CheckCrateVisitor<'a, 'tcx> {
                     }
                     break;
                 }
-                mc::cat_deref(ref cmt, _, _) |
-                mc::cat_downcast(ref cmt, _) |
-                mc::cat_interior(ref cmt, _) => cur = cmt,
+                Categorization::Deref(ref cmt, _, _) |
+                Categorization::Downcast(ref cmt, _) |
+                Categorization::Interior(ref cmt, _) => cur = cmt,
 
-                mc::cat_rvalue(..) |
-                mc::cat_upvar(..) |
-                mc::cat_local(..) => break
+                Categorization::Rvalue(..) |
+                Categorization::Upvar(..) |
+                Categorization::Local(..) => break
             }
         }
     }
@@ -899,7 +900,7 @@ impl<'a, 'tcx> euv::Delegate<'tcx> for CheckCrateVisitor<'a, 'tcx> {
         let mut is_interior = false;
         loop {
             match cur.cat {
-                mc::cat_rvalue(..) => {
+                Categorization::Rvalue(..) => {
                     if loan_cause == euv::MatchDiscriminant {
                         // Ignore the dummy immutable borrow created by EUV.
                         break;
@@ -920,7 +921,7 @@ impl<'a, 'tcx> euv::Delegate<'tcx> for CheckCrateVisitor<'a, 'tcx> {
                     self.record_borrow(borrow_id, mutbl);
                     break;
                 }
-                mc::cat_static_item => {
+                Categorization::StaticItem => {
                     if is_interior && self.mode != Mode::Var {
                         // Borrowed statics can specifically *only* have their address taken,
                         // not any number of other borrows such as borrowing fields, reading
@@ -931,15 +932,15 @@ impl<'a, 'tcx> euv::Delegate<'tcx> for CheckCrateVisitor<'a, 'tcx> {
                     }
                     break;
                 }
-                mc::cat_deref(ref cmt, _, _) |
-                mc::cat_downcast(ref cmt, _) |
-                mc::cat_interior(ref cmt, _) => {
+                Categorization::Deref(ref cmt, _, _) |
+                Categorization::Downcast(ref cmt, _) |
+                Categorization::Interior(ref cmt, _) => {
                     is_interior = true;
                     cur = cmt;
                 }
 
-                mc::cat_upvar(..) |
-                mc::cat_local(..) => break
+                Categorization::Upvar(..) |
+                Categorization::Local(..) => break
             }
         }
     }

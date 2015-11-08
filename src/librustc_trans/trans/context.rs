@@ -14,6 +14,7 @@ use metadata::common::LinkMeta;
 use middle::def::ExportMap;
 use middle::def_id::DefId;
 use middle::traits;
+use rustc_mir::mir_map::MirMap;
 use trans::adt;
 use trans::base;
 use trans::builder::Builder;
@@ -70,6 +71,7 @@ pub struct SharedCrateContext<'a, 'tcx: 'a> {
     stats: Stats,
     check_overflow: bool,
     check_drop_flag_for_sanity: bool,
+    mir_map: &'a MirMap<'tcx>,
 
     available_drop_glues: RefCell<FnvHashMap<DropGlueKind<'tcx>, String>>,
     use_dll_storage_attrs: bool,
@@ -146,8 +148,8 @@ pub struct LocalCrateContext<'tcx> {
     dbg_cx: Option<debuginfo::CrateDebugContext<'tcx>>,
 
     eh_personality: RefCell<Option<ValueRef>>,
+    eh_unwind_resume: RefCell<Option<ValueRef>>,
     rust_try_fn: RefCell<Option<ValueRef>>,
-    unwind_resume_hooked: Cell<bool>,
 
     intrinsics: RefCell<FnvHashMap<&'static str, ValueRef>>,
 
@@ -251,6 +253,7 @@ impl<'b, 'tcx> SharedCrateContext<'b, 'tcx> {
     pub fn new(crate_name: &str,
                local_count: usize,
                tcx: &'b ty::ctxt<'tcx>,
+               mir_map: &'b MirMap<'tcx>,
                export_map: ExportMap,
                symbol_hasher: Sha256,
                link_meta: LinkMeta,
@@ -317,6 +320,7 @@ impl<'b, 'tcx> SharedCrateContext<'b, 'tcx> {
             link_meta: link_meta,
             symbol_hasher: RefCell::new(symbol_hasher),
             tcx: tcx,
+            mir_map: mir_map,
             stats: Stats {
                 n_glues_created: Cell::new(0),
                 n_null_glues: Cell::new(0),
@@ -469,8 +473,8 @@ impl<'tcx> LocalCrateContext<'tcx> {
                 closure_vals: RefCell::new(FnvHashMap()),
                 dbg_cx: dbg_cx,
                 eh_personality: RefCell::new(None),
+                eh_unwind_resume: RefCell::new(None),
                 rust_try_fn: RefCell::new(None),
-                unwind_resume_hooked: Cell::new(false),
                 intrinsics: RefCell::new(FnvHashMap()),
                 n_llvm_insns: Cell::new(0),
                 type_of_depth: Cell::new(0),
@@ -732,12 +736,12 @@ impl<'b, 'tcx> CrateContext<'b, 'tcx> {
         &self.local.eh_personality
     }
 
-    pub fn rust_try_fn<'a>(&'a self) -> &'a RefCell<Option<ValueRef>> {
-        &self.local.rust_try_fn
+    pub fn eh_unwind_resume<'a>(&'a self) -> &'a RefCell<Option<ValueRef>> {
+        &self.local.eh_unwind_resume
     }
 
-    pub fn unwind_resume_hooked<'a>(&'a self) -> &'a Cell<bool> {
-        &self.local.unwind_resume_hooked
+    pub fn rust_try_fn<'a>(&'a self) -> &'a RefCell<Option<ValueRef>> {
+        &self.local.rust_try_fn
     }
 
     fn intrinsics<'a>(&'a self) -> &'a RefCell<FnvHashMap<&'static str, ValueRef>> {
@@ -802,6 +806,10 @@ impl<'b, 'tcx> CrateContext<'b, 'tcx> {
 
     pub fn use_dll_storage_attrs(&self) -> bool {
         self.shared.use_dll_storage_attrs()
+    }
+
+    pub fn mir_map(&self) -> &'b MirMap<'tcx> {
+        self.shared.mir_map
     }
 }
 

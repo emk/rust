@@ -104,7 +104,7 @@ impl<'a, 'tcx> CFGBuilder<'a, 'tcx> {
             hir::PatQPath(..) |
             hir::PatLit(..) |
             hir::PatRange(..) |
-            hir::PatWild(_) => {
+            hir::PatWild => {
                 self.add_ast_node(pat.id, &[pred])
             }
 
@@ -472,7 +472,7 @@ impl<'a, 'tcx> CFGBuilder<'a, 'tcx> {
                     let guard_exit = self.expr(&**guard, guard_start);
 
                     let this_has_bindings = pat_util::pat_contains_bindings_or_wild(
-                        &self.tcx.def_map, &**pat);
+                        &self.tcx.def_map.borrow(), &**pat);
 
                     // If both this pattern and the previous pattern
                     // were free of bindings, they must consist only

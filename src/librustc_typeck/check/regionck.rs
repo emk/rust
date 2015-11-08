@@ -88,6 +88,7 @@ use check::FnCtxt;
 use middle::free_region::FreeRegionMap;
 use middle::implicator::{self, Implication};
 use middle::mem_categorization as mc;
+use middle::mem_categorization::Categorization;
 use middle::region::CodeExtent;
 use middle::subst::Substs;
 use middle::traits;
@@ -283,19 +284,32 @@ impl<'a, 'tcx> Rcx<'a, 'tcx> {
         // When we enter a function, we can derive
         debug!("visit_fn_body(id={})", id);
 
-        let fn_sig_map = self.fcx.inh.fn_sig_map.borrow();
-        let fn_sig = match fn_sig_map.get(&id) {
-            Some(f) => f,
-            None => {
-                self.tcx().sess.bug(
-                    &format!("No fn-sig entry for id={}", id));
+        let fn_sig = {
+            let fn_sig_map = &self.infcx().tables.borrow().liberated_fn_sigs;
+            match fn_sig_map.get(&id) {
+                Some(f) => f.clone(),
+                None => {
+                    self.tcx().sess.bug(
+                        &format!("No fn-sig entry for id={}", id));
+                }
             }
         };
 
         let old_region_bounds_pairs_len = self.region_bound_pairs.len();
 
+        // Collect the types from which we create inferred bounds.
+        // For the return type, if diverging, substitute `bool` just
+        // because it will have no effect.
+        //
+        // FIXME(#25759) return types should not be implied bounds
+        let fn_sig_tys: Vec<_> =
+            fn_sig.inputs.iter()
+                         .cloned()
+                         .chain(Some(fn_sig.output.unwrap_or(self.tcx().types.bool)))
+                         .collect();
+
         let old_body_id = self.set_body_id(body.id);
-        self.relate_free_regions(&fn_sig[..], body.id, span);
+        self.relate_free_regions(&fn_sig_tys[..], body.id, span);
         link_fn_args(self,
                      self.tcx().region_maps.node_extent(body.id),
                      &fn_decl.inputs[..]);
@@ -1058,7 +1072,7 @@ fn check_safety_of_rvalue_destructor_if_necessary<'a, 'tcx>(rcx: &mut Rcx<'a, 't
                                                             cmt: mc::cmt<'tcx>,
                                                             span: Span) {
     match cmt.cat {
-        mc::cat_rvalue(region) => {
+        Categorization::Rvalue(region) => {
             match region {
                 ty::ReScope(rvalue_scope) => {
                     let typ = rcx.resolve_type(cmt.ty);
@@ -1300,10 +1314,10 @@ fn link_region<'a, 'tcx>(rcx: &Rcx<'a, 'tcx>,
                borrow_kind,
                borrow_cmt);
         match borrow_cmt.cat.clone() {
-            mc::cat_deref(ref_cmt, _,
-                          mc::Implicit(ref_kind, ref_region)) |
-            mc::cat_deref(ref_cmt, _,
-                          mc::BorrowedPtr(ref_kind, ref_region)) => {
+            Categorization::Deref(ref_cmt, _,
+                                  mc::Implicit(ref_kind, ref_region)) |
+            Categorization::Deref(ref_cmt, _,
+                                  mc::BorrowedPtr(ref_kind, ref_region)) => {
                 match link_reborrowed_region(rcx, span,
                                              borrow_region, borrow_kind,
                                              ref_cmt, ref_region, ref_kind,
@@ -1318,20 +1332,20 @@ fn link_region<'a, 'tcx>(rcx: &Rcx<'a, 'tcx>,
                 }
             }
 
-            mc::cat_downcast(cmt_base, _) |
-            mc::cat_deref(cmt_base, _, mc::Unique) |
-            mc::cat_interior(cmt_base, _) => {
+            Categorization::Downcast(cmt_base, _) |
+            Categorization::Deref(cmt_base, _, mc::Unique) |
+            Categorization::Interior(cmt_base, _) => {
                 // Borrowing interior or owned data requires the base
                 // to be valid and borrowable in the same fashion.
                 borrow_cmt = cmt_base;
                 borrow_kind = borrow_kind;
             }
 
-            mc::cat_deref(_, _, mc::UnsafePtr(..)) |
-            mc::cat_static_item |
-            mc::cat_upvar(..) |
-            mc::cat_local(..) |
-            mc::cat_rvalue(..) => {
+            Categorization::Deref(_, _, mc::UnsafePtr(..)) |
+            Categorization::StaticItem |
+            Categorization::Upvar(..) |
+            Categorization::Local(..) |
+            Categorization::Rvalue(..) => {
                 // These are all "base cases" with independent lifetimes
                 // that are not subject to inference
                 return;

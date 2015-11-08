@@ -2528,8 +2528,7 @@ fn name_from_pat(p: &hir::Pat) -> String {
     debug!("Trying to get a name from pattern: {:?}", p);
 
     match p.node {
-        PatWild(PatWildSingle) => "_".to_string(),
-        PatWild(PatWildMulti) => "..".to_string(),
+        PatWild => "_".to_string(),
         PatIdent(_, ref p, _) => p.node.to_string(),
         PatEnum(ref p, _) => path_to_string(p),
         PatQPath(..) => panic!("tried to get argument name from PatQPath, \
@@ -2569,8 +2568,18 @@ fn resolve_type(cx: &DocContext,
     debug!("resolve_type({:?},{:?})", path, id);
     let tcx = match cx.tcx_opt() {
         Some(tcx) => tcx,
-        // If we're extracting tests, this return value doesn't matter.
-        None => return Primitive(Bool),
+        // If we're extracting tests, this return value's accuracy is not
+        // important, all we want is a string representation to help people
+        // figure out what doctests are failing.
+        None => {
+            let did = DefId::local(DefIndex::from_u32(0));
+            return ResolvedPath {
+                path: path,
+                typarams: None,
+                did: did,
+                is_generic: false
+            };
+        }
     };
     let def = match tcx.def_map.borrow().get(&id) {
         Some(k) => k.full_def(),

@@ -1565,6 +1565,8 @@ pub trait Iterator {
     /// as soon as it finds a `false`, given that no matter what else happens,
     /// the result will also be `false`.
     ///
+    /// An empty iterator returns `true`.
+    ///
     /// # Examples
     ///
     /// Basic usage:
@@ -1612,6 +1614,8 @@ pub trait Iterator {
     /// `any()` is short-circuting; in other words, it will stop processing
     /// as soon as it finds a `true`, given that no matter what else happens,
     /// the result will also be `true`.
+    ///
+    /// An empty iterator returns `false`.
     ///
     /// # Examples
     ///
@@ -2071,6 +2075,8 @@ pub trait Iterator {
     ///
     /// Takes each element, adds them together, and returns the result.
     ///
+    /// An empty iterator returns the zero value of the type.
+    ///
     /// # Examples
     ///
     /// Basic usage:
@@ -2093,6 +2099,8 @@ pub trait Iterator {
     }
 
     /// Iterates over the entire iterator, multiplying all the elements
+    ///
+    /// An empty iterator returns the one value of the type.
     ///
     /// # Examples
     ///
@@ -2557,11 +2565,11 @@ pub trait Extend<A> {
     ///
     /// ```
     /// // You can extend a String with some chars:
-    /// let mut message = String::from("The first three letters are: ");
+    /// let mut message = String::from("abc");
     ///
-    /// message.extend(['a', 'b', 'c'].iter());
+    /// message.extend(['d', 'e', 'f'].iter());
     ///
-    /// assert_eq!("abc", &message[29..32]);
+    /// assert_eq!("abcdef", &message);
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
     fn extend<T: IntoIterator<Item=A>>(&mut self, iterable: T);
@@ -3378,7 +3386,6 @@ impl<I: Iterator> Iterator for Peekable<I> {
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<I: ExactSizeIterator> ExactSizeIterator for Peekable<I> {}
 
-#[stable(feature = "rust1", since = "1.0.0")]
 impl<I: Iterator> Peekable<I> {
     /// Returns a reference to the next() value without advancing the iterator.
     ///

@@ -677,7 +677,6 @@ impl Iterator for ReadDir {
     }
 }
 
-#[stable(feature = "rust1", since = "1.0.0")]
 impl DirEntry {
     /// Returns the full path to the file that this entry represents.
     ///
@@ -1732,7 +1731,7 @@ mod tests {
         let tmpdir = tmpdir();
 
         let mut dirpath = tmpdir.path().to_path_buf();
-        dirpath.push(&format!("test-가一ー你好"));
+        dirpath.push("test-가一ー你好");
         check!(fs::create_dir(&dirpath));
         assert!(dirpath.is_dir());
 

@@ -132,6 +132,32 @@ $$(TBIN$(1)_T_$(2)_H_$(3))/$(4)$$(X_$(2)): \
 
 endef
 
+# Macro for building runtime startup/shutdown object files;
+# these are Rust's equivalent of crti.o, crtn.o
+#
+# $(1) - stage
+# $(2) - target triple
+# $(3) - host triple
+# $(4) - object basename
+define TARGET_RUSTRT_STARTUP_OBJ
+
+$$(TLIB$(1)_T_$(2)_H_$(3))/$(4).o: \
+		$(S)src/rtstartup/$(4).rs \
+		$$(TLIB$(1)_T_$(2)_H_$(3))/stamp.core \
+		$$(HSREQ$(1)_T_$(2)_H_$(3)) \
+		| $$(TBIN$(1)_T_$(2)_H_$(3))/
+	@$$(call E, rustc: $$@)
+	$$(STAGE$(1)_T_$(2)_H_$(3)) --emit=obj -o $$@ $$<
+
+# Add dependencies on Rust startup objects to all crates that depend on core.
+# This ensures that they are built after core (since they depend on it),
+# but before everything else (since they are needed for linking dylib crates).
+$$(foreach crate, $$(TARGET_CRATES), \
+	$$(if $$(findstring core,$$(DEPS_$$(crate))), \
+		$$(TLIB$(1)_T_$(2)_H_$(3))/stamp.$$(crate))) : $$(TLIB$(1)_T_$(2)_H_$(3))/$(4).o
+
+endef
+
 # Every recipe in RUST_TARGET_STAGE_N outputs to $$(TLIB$(1)_T_$(2)_H_$(3),
 # a directory that can be cleaned out during the middle of a run of
 # the get-snapshot.py script.  Therefore, every recipe needs to have
@@ -174,3 +200,9 @@ $(foreach host,$(CFG_HOST), \
   $(foreach stage,$(STAGES), \
    $(foreach tool,$(TOOLS), \
     $(eval $(call TARGET_TOOL,$(stage),$(target),$(host),$(tool)))))))
+
+$(foreach host,$(CFG_HOST), \
+ $(foreach target,$(CFG_TARGET), \
+  $(foreach stage,$(STAGES), \
+  	$(foreach obj,rsbegin rsend, \
+   	  $(eval $(call TARGET_RUSTRT_STARTUP_OBJ,$(stage),$(target),$(host),$(obj)))))))

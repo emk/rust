@@ -121,6 +121,13 @@ pub struct Tables<'tcx> {
     /// Records the type of each closure. The def ID is the ID of the
     /// expression defining the closure.
     pub closure_kinds: DefIdMap<ty::ClosureKind>,
+
+    /// For each fn, records the "liberated" types of its arguments
+    /// and return type. Liberated means that all bound regions
+    /// (including late-bound regions) are replaced with free
+    /// equivalents. This table is not used in trans (since regions
+    /// are erased there) and hence is not serialized to metadata.
+    pub liberated_fn_sigs: NodeMap<ty::FnSig<'tcx>>,
 }
 
 impl<'tcx> Tables<'tcx> {
@@ -133,6 +140,7 @@ impl<'tcx> Tables<'tcx> {
             upvar_capture_map: FnvHashMap(),
             closure_tys: DefIdMap(),
             closure_kinds: DefIdMap(),
+            liberated_fn_sigs: NodeMap(),
         }
     }
 
@@ -220,7 +228,7 @@ pub struct ctxt<'tcx> {
     pub types: CommonTypes<'tcx>,
 
     pub sess: &'tcx Session,
-    pub def_map: DefMap,
+    pub def_map: RefCell<DefMap>,
 
     pub named_region_map: resolve_lifetime::NamedRegionMap,
 
@@ -445,10 +453,10 @@ impl<'tcx> ctxt<'tcx> {
     /// reference to the context, to allow formatting values that need it.
     pub fn create_and_enter<F, R>(s: &'tcx Session,
                                  arenas: &'tcx CtxtArenas<'tcx>,
-                                 def_map: DefMap,
+                                 def_map: RefCell<DefMap>,
                                  named_region_map: resolve_lifetime::NamedRegionMap,
                                  map: ast_map::Map<'tcx>,
-                                 freevars: RefCell<FreevarMap>,
+                                 freevars: FreevarMap,
                                  region_maps: RegionMaps,
                                  lang_items: middle::lang_items::LanguageItems,
                                  stability: stability::Index<'tcx>,
@@ -481,7 +489,7 @@ impl<'tcx> ctxt<'tcx> {
             super_predicates: RefCell::new(DefIdMap()),
             fulfilled_predicates: RefCell::new(traits::FulfilledPredicates::new()),
             map: map,
-            freevars: freevars,
+            freevars: RefCell::new(freevars),
             tcache: RefCell::new(DefIdMap()),
             rcache: RefCell::new(FnvHashMap()),
             tc_cache: RefCell::new(FnvHashMap()),

@@ -376,18 +376,29 @@ define SREQ
 # Destinations of artifacts for the host compiler
 HROOT$(1)_H_$(3) = $(3)/stage$(1)
 HBIN$(1)_H_$(3) = $$(HROOT$(1)_H_$(3))/bin
+
 ifeq ($$(CFG_WINDOWSY_$(3)),1)
-HLIB$(1)_H_$(3) = $$(HROOT$(1)_H_$(3))/$$(CFG_LIBDIR_RELATIVE)
+# On Windows we always store host runtime libraries in the 'bin' directory because
+# there's no rpath. Target libraries go under $CFG_LIBDIR_RELATIVE (usually 'lib').
+HLIB$(1)_H_$(3) = $$(HROOT$(1)_H_$(3))/bin
+TROOT$(1)_T_$(2)_H_$(3) = $$(HROOT$(1)_H_$(3))/$$(CFG_LIBDIR_RELATIVE)/rustlib/$(2)
+# Remove the next 3 lines after a snapshot
+ifeq ($(1),0)
+RUSTFLAGS_STAGE0 += -L $$(TROOT$(1)_T_$(2)_H_$(3))/lib
+endif
+
 else
+
 ifeq ($(1),0)
 HLIB$(1)_H_$(3) = $$(HROOT$(1)_H_$(3))/lib
 else
 HLIB$(1)_H_$(3) = $$(HROOT$(1)_H_$(3))/$$(CFG_LIBDIR_RELATIVE)
 endif
+TROOT$(1)_T_$(2)_H_$(3) = $$(HLIB$(1)_H_$(3))/rustlib/$(2)
+
 endif
 
 # Destinations of artifacts for target architectures
-TROOT$(1)_T_$(2)_H_$(3) = $$(HLIB$(1)_H_$(3))/rustlib/$(2)
 TBIN$(1)_T_$(2)_H_$(3) = $$(TROOT$(1)_T_$(2)_H_$(3))/bin
 TLIB$(1)_T_$(2)_H_$(3) = $$(TROOT$(1)_T_$(2)_H_$(3))/lib
 
@@ -404,7 +415,7 @@ endif
 # Prerequisites for using the stageN compiler to build target artifacts
 TSREQ$(1)_T_$(2)_H_$(3) = \
 	$$(HSREQ$(1)_H_$(3)) \
-	$$(foreach obj,$$(INSTALLED_OBJECTS_$(2)),\
+	$$(foreach obj,$$(REQUIRED_OBJECTS_$(2)),\
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(obj))
 
 # Prerequisites for a working stageN compiler and libraries, for a specific
